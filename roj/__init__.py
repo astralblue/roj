@@ -14,10 +14,10 @@ class FatalError(RuntimeError):
     """Fatal error, which causes program to exit with the given message."""
 
 
-class JC:
+class RunOnJail:
     __argparser: Optional[argparse.ArgumentParser] = None
     __args: Optional[argparse.Namespace] = None
-    logger = logger.getChild('JC')
+    logger = logger.getChild('RunOnJail')
 
     def __init__(self, *poargs, **kwargs):
         super().__init__(*poargs, **kwargs)
@@ -127,7 +127,7 @@ class JC:
 
 
 def main():
-    return JC().main()
+    return RunOnJail().main()
 
 
 if __name__ == '__main__':
