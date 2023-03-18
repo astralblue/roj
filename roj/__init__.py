@@ -1,11 +1,12 @@
 from __future__ import annotations
+
 import argparse
 import logging
 import os
 import shlex
 import subprocess
 import sys
-from typing import Optional, Iterable
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,8 @@ class RunOnJail:
         try:
             if self.args.debug:
                 logging.getLogger().setLevel(logging.DEBUG)
+            if self.args.bash_complete:
+                return self.bash_complete()
             if self.args.jail is None:
                 self.__logger.debug("listing jails")
                 for jid, name in self.list_jails():
@@ -112,6 +115,9 @@ class RunOnJail:
                                      remotely""")
             parser.add_argument('--debug', action='store_true',
                                 help="""enable debug logging""")
+            parser.add_argument('--bash-complete', nargs=3,
+                                metavar=('<COMMAND>', '<WORD>', '<PWORD>'),
+                                help="""bash completion helper""")
             parser.add_argument('jail', metavar='<JAIL>', nargs='?',
                                 help="""the jail name or ID; if not found
                                         as-is a name prefixed with "ioc-" is
@@ -125,11 +131,23 @@ class RunOnJail:
             self.__argparser = parser
         return self.__argparser
 
+    def bash_complete(self):
+        def get_env(name):
+            try:
+                return os.environ[name]
+            except KeyError:
+                raise FatalError(f"Bash completion variable {name} not found")
 
-def main():
-    return RunOnJail().main()
+        comp_line = get_env('COMP_LINE')
+        comp_point = int(get_env('COMP_POINT'))
+        comp_key = get_env('COMP_KEY')
+        comp_typ = get_env('COMP_TYPE')
+        command, word, prev_word = self.args.bash_complete
 
-
-if __name__ == '__main__':
-    logging.basicConfig()
-    sys.exit(main() or 0)
+        names = {name for jid, name in self.list_jails()}
+        for name in names:
+            if name.startswith(word):
+                if name.startswith('ioc-') and name[4:] not in names:
+                    print(name[4:])
+                else:
+                    print(name)
