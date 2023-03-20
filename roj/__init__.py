@@ -146,8 +146,7 @@ class RunOnJail:
 
         names = {name for jid, name in self.list_jails()}
         for name in names:
+            if name.startswith('ioc-') and name[4:] not in names:
+                name = name[4:]
             if name.startswith(word):
-                if name.startswith('ioc-') and name[4:] not in names:
-                    print(name[4:])
-                else:
-                    print(name)
+                print(name)
