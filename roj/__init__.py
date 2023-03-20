@@ -60,21 +60,30 @@ class RunOnJail:
                 return 1
 
     def list_jails(self):
+        jail_list = []
+        jails = set()
         with self.popen(['jls', 'jid', 'name'],
                         stdout=subprocess.PIPE) as popen:
             for line in popen.stdout:
                 jid, name = line.decode().removesuffix('\n').split(' ', 1)
-                yield jid, name
+                jail_list.append((jid, name))
+                jails.add(name)
+        for jid, name in jail_list:
+            if (
+                    not self.args.full and
+                    name.startswith('ioc-') and
+                    name[4:] not in jails
+            ):
+                name = name[4:]
+            yield jid, name
 
     def find_jail(self):
         jids = {name: jid for jid, name in self.list_jails()}
         self.__logger.debug("jids=%r", jids)
-        for name in (self.args.jail, 'ioc-' + self.args.jail):
-            try:
-                return jids[name], name
-            except KeyError:
-                pass
-        raise FatalError(f"jail {self.args.jail} not found")
+        try:
+            return jids[self.args.jail], self.args.jail
+        except KeyError:
+            raise FatalError(f"jail {self.args.jail} not found")
 
     def popen(self, args, *poargs, **kwargs):
         argv = self.wrap_argv(args)
@@ -113,6 +122,17 @@ class RunOnJail:
                              action='store_const', dest='tty', const=False,
                              help="""do not allocate TTY when running
                                      remotely""")
+            parser.add_argument('--full', '-f', action='store_const',
+                                dest='full', const=True,
+                                help="""show/use full jail names:
+                                        disable "ioc-" stripping""")
+            parser.add_argument('--short', '-s', action='store_const',
+                                dest='full', const=False,
+                                help="""show/use short jail names: if a jail
+                                        name starts with an "ioc-" prefix and
+                                        there is no other jail with the
+                                        corresponding name without the prefix,
+                                        strip the prefix""")
             parser.add_argument('--debug', action='store_true',
                                 help="""enable debug logging""")
             parser.add_argument('--bash-complete', nargs=3,
@@ -146,7 +166,5 @@ class RunOnJail:
 
         names = {name for jid, name in self.list_jails()}
         for name in names:
-            if name.startswith('ioc-') and name[4:] not in names:
-                name = name[4:]
             if name.startswith(word):
                 print(name)
