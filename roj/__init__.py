@@ -116,7 +116,7 @@ class RunOnJail:
                               help="""username (in jail) or uid to run as""")
             tty = parser.add_mutually_exclusive_group()
             tty.add_argument('--tty', '-t',
-                             action='store_const', dest='tty', const=False,
+                             action='store_const', dest='tty', const=True,
                              help="""allocate TTY when running remotely""")
             tty.add_argument('--no-tty', '-T',
                              action='store_const', dest='tty', const=False,
