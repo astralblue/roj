@@ -63,6 +63,7 @@ class RunOnJail:
         jail_list = []
         jails = set()
         with self.popen(['jls', 'jid', 'name'],
+                        stdin=subprocess.DEVNULL,
                         stdout=subprocess.PIPE) as popen:
             for line in popen.stdout:
                 jid, name = line.decode().removesuffix('\n').split(' ', 1)
