@@ -109,6 +109,12 @@ and `pypa/gh-action-pypi-publish` has no `v1` tag at all — it publishes `relea
 Dependabot updates keep those pins current; re-resolve against the upstream tag list before
 changing them.
 
+Branch protection on `main` requires exactly one status check, **`all checks`** — the
+aggregator job in `test.yml` that depends on `lint` and the whole `test` matrix. Required
+checks are matched by *name*, so requiring the matrix legs directly (`py3.10 on
+ubuntu-latest`, …) would block every pull request the moment the matrix changes. Renaming the
+`all-checks` job means updating the protection rule in the same change.
+
 CI is GitHub Actions on the **`main`** default branch, and the only git remote is
 **`astralblue`** — there is no `origin`. That remote's fetch refspec maps upstream tags into a
 prefixed local namespace (`refs/tags/astralblue/*`), so **never push with `--follow-tags` or

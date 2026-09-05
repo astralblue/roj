@@ -71,3 +71,23 @@ jobs:
 
       - name: Run tests
         run: uv run --locked --no-default-groups --group test pytest -v
+
+  # A single, stable context for branch protection to require.  Required
+  # status checks are matched by NAME, so requiring the matrix legs directly
+  # would block every pull request the moment the matrix changes -- e.g.
+  # when 3.10 reaches end of life in October 2026 and is dropped.  Protect
+  # main by requiring only "all checks"; the matrix can then change freely
+  # underneath it.  Do not rename this job without updating the protection
+  # rule at the same time.
+  all-checks:
+    name: all checks
+    needs: [lint, test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail unless every job succeeded
+        run: |
+          echo "lint: ${{ needs.lint.result }}"
+          echo "test: ${{ needs.test.result }}"
+          [ "${{ needs.lint.result }}" = "success" ] || exit 1
+          [ "${{ needs.test.result }}" = "success" ] || exit 1
