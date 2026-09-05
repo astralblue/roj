@@ -8,6 +8,8 @@ import subprocess
 import sys
 from typing import Optional
 
+__version__ = "0.2.4"
+
 logger = logging.getLogger(__name__)
 
 

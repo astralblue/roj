@@ -1,3 +1,116 @@
 [build-system]
-requires = ["setuptools", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["flit_core >=3.11,<5"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "roj"
+description = "roj (run on jail) runs a command (login shell by default) on a local or remote jail"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "BSD-2-Clause"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Eugene M. Kim", email = "astralblue@gmail.com" },
+]
+keywords = [
+    "freebsd",
+    "jail",
+    "jexec",
+    "jls",
+    "iocage",
+    "ssh",
+    "sysadmin",
+    "cli",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "Natural Language :: English",
+    # NOT "OS Independent": os.execvp, shlex.quote and ssh(1) rule Windows
+    # out, while the jail host is FreeBSD and the client can be any POSIX
+    # system -- roj is routinely run from Linux and macOS over -H/--host.
+    #
+    # There must be no "License :: OSI Approved" classifier here: `license`
+    # above is a PEP 639 expression, and flit_core refuses to build when an
+    # expression and a license classifier are both present.
+    "Operating System :: POSIX",
+    "Operating System :: POSIX :: BSD :: FreeBSD",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: System :: Systems Administration",
+]
+dependencies = []
+# Read from __version__ in roj/__init__.py, which is what bump-my-version
+# rewrites.  Never edit that string by hand.
+dynamic = ["version"]
+
+[project.scripts]
+roj = "roj.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/astralblue/roj"
+Changelog = "https://github.com/astralblue/roj/blob/main/CHANGELOG.md"
+Issues = "https://github.com/astralblue/roj/issues"
+
+# --- build backend ---------------------------------------------------------
+
+# No [tool.flit.module] table: flit derives the module name from the project
+# name, and the roj/ package already matches.
+
+[tool.flit.sdist]
+# Load-bearing, not decorative: under a PEP 517 frontend flit_core never
+# consults version control, so without this table the sdist would be just
+# roj/, pyproject.toml, README.md and LICENSE.  Anything else that should
+# ship has to be listed here.  __pycache__ and *.pyc are excluded
+# automatically whenever this table is present.
+exclude = [
+    "**/.DS_Store",
+]
+
+# --- development dependencies ----------------------------------------------
+
+# Versions are floors, not pins: uv.lock is what makes an environment
+# reproducible, and pinning here is what makes Dependabot open a pull request
+# per patch release of every dev tool.
+[dependency-groups]
+test = ["pytest>=8", "coverage[toml]>=7"]
+lint = ["ruff>=0.16"]
+release = ["bump-my-version>=1.5"]
+dev = [
+    { include-group = "test" },
+    { include-group = "lint" },
+    { include-group = "release" },
+]
+
+# --- tooling ---------------------------------------------------------------
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+
+[tool.coverage.run]
+source = ["roj"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+
+[tool.bumpversion]
+current_version = "0.2.4"
+commit = true
+tag = true
+# Spelled out because .github/workflows/release.yml keys off the tag name:
+# changing this means changing the workflow's `tags:` filter too.
+tag_name = "v{new_version}"
+
+[[tool.bumpversion.files]]
+filename = "roj/__init__.py"
+search = '__version__ = "{current_version}"'
+replace = '__version__ = "{new_version}"'
