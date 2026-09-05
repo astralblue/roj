@@ -70,6 +70,7 @@ Issues = "https://github.com/astralblue/roj/issues"
 # ship has to be listed here.  __pycache__ and *.pyc are excluded
 # automatically whenever this table is present.
 include = [
+    "CHANGELOG.md",
     "tests/",
 ]
 exclude = [

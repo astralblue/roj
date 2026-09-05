@@ -4,6 +4,23 @@ roj (Run On Jail)
 roj is a simple command-line tool that runs a command (login shell by default)
 in the given jail, either locally or over SSH.
 
+Requirements
+------------
+
+Python 3.10 or newer.
+
+The host whose jails you are addressing must be FreeBSD, since `roj` drives
+`jls(8)` and `jexec(8)` there.  The machine you run `roj` *from* need only be
+POSIX: with `-H`/`--host` everything is wrapped in `ssh(1)`, so driving a
+FreeBSD jail host from Linux or macOS works.  Windows is not supported.
+
+Installation
+------------
+
+```sh
+pip install roj
+```
+
 Examples:
 
 ```sh
@@ -83,3 +100,23 @@ so the following works as expected:
 alias roj1='roj --host=server1'
 complete -C `roj1 --bash-complete` roj1
 ```
+
+
+Development
+-----------
+
+The dev toolchain is managed by [uv](https://docs.astral.sh/uv/), and
+`uv.lock` is committed and authoritative.
+
+```sh
+uv sync                          # create .venv from uv.lock
+uv run pytest                    # run the tests
+uv run --python 3.14 pytest      # ...on any supported version; uv fetches it
+uv run ruff check .              # lint
+uv run ruff format .             # format ("--check" to verify only)
+uv build                         # build the sdist and wheel
+```
+
+If you change `[project]` or `[dependency-groups]` in `pyproject.toml`,
+regenerate the lockfile with `uv lock` and commit it: CI runs `uv lock --check`
+and fails on a stale one.
