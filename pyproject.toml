@@ -102,6 +102,27 @@ branch = true
 [tool.coverage.report]
 show_missing = true
 
+[tool.ruff]
+line-length = 79
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors    \
+    "W",   # pycodestyle warnings   |  what a flake8 gate would have checked
+    "F",   # pyflakes              /
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+]
+# "D" (pydocstyle) is deliberately NOT selected.  The gate this replaces was
+# a PyCharm inspection profile with USE_PROJECT_PROFILE = false -- i.e. not
+# even active -- and it never required docstrings.  Adding D would flag every
+# method in RunOnJail at once.  Tracked as a follow-up in CLAUDE.local.md.
+
+[tool.ruff.lint.isort]
+known-first-party = ["roj"]
+
 [tool.bumpversion]
 current_version = "0.2.4"
 commit = true

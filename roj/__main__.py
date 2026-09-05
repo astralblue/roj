@@ -9,5 +9,5 @@ def main():
     sys.exit(roj.RunOnJail().main())
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
