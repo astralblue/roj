@@ -69,6 +69,9 @@ Issues = "https://github.com/astralblue/roj/issues"
 # roj/, pyproject.toml, README.md and LICENSE.  Anything else that should
 # ship has to be listed here.  __pycache__ and *.pyc are excluded
 # automatically whenever this table is present.
+include = [
+    "tests/",
+]
 exclude = [
     "**/.DS_Store",
 ]
