@@ -1,0 +1,73 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  FORCE_COLOR: "1"
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # setup-uv stopped publishing floating major tags after v7, so this is
+      # pinned to an exact release rather than @v10.  Dependabot keeps it
+      # current.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+
+      # Fail loudly on a stale lockfile rather than letting it drift.
+      - name: Check that uv.lock is in sync with pyproject.toml
+        run: uv lock --check
+
+      - name: ruff check
+        run: uv run --locked ruff check --output-format=github .
+
+      - name: ruff format --check
+        run: uv run --locked ruff format --check --diff .
+
+  test:
+    name: py${{ matrix.python-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        include:
+          # roj is a client as often as it is a jail-host tool -- it is run
+          # from macOS and Linux against a remote FreeBSD host over
+          # -H/--host -- so one macOS leg guards the paths that differ.  It
+          # is pinned to the newest interpreter to hold the job count down.
+          # There is deliberately no Windows leg: os.execvp, shlex.quote and
+          # ssh(1) make roj POSIX-only, which is what the trove classifiers
+          # say too.
+          - os: macos-latest
+            python-version: "3.14"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv and Python ${{ matrix.python-version }}
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+
+      - name: Run tests
+        run: uv run --locked --no-default-groups --group test pytest -v
