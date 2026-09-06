@@ -6,7 +6,8 @@ import os
 import shlex
 import subprocess
 import sys
-from typing import Optional
+
+__version__ = "0.3.0"
 
 logger = logging.getLogger(__name__)
 
@@ -16,9 +17,9 @@ class FatalError(RuntimeError):
 
 
 class RunOnJail:
-    __argparser: Optional[argparse.ArgumentParser] = None
-    __args: Optional[argparse.Namespace] = None
-    logger = logger.getChild('RunOnJail')
+    __argparser: argparse.ArgumentParser | None = None
+    __args: argparse.Namespace | None = None
+    logger = logger.getChild("RunOnJail")
 
     def __init__(self, *poargs, **kwargs):
         super().__init__(*poargs, **kwargs)
@@ -40,13 +41,20 @@ class RunOnJail:
             self.__logger.debug("found jail %s (%s)", jid, name)
             ssh_tty = self.args.tty
             if self.args.command:
-                command = ['jexec', '-U', self.args.user, jid]
+                command = ["jexec", "-U", self.args.user, jid]
                 command.extend(self.args.command)
                 if ssh_tty is None:
                     ssh_tty = False
             else:
-                command = ['jexec', '-U', 'root', jid,
-                           'login', '-f', self.args.user]
+                command = [
+                    "jexec",
+                    "-U",
+                    "root",
+                    jid,
+                    "login",
+                    "-f",
+                    self.args.user,
+                ]
                 if ssh_tty is None:
                     ssh_tty = True
             command = self.wrap_argv(command, ssh_tty=ssh_tty)
@@ -62,18 +70,20 @@ class RunOnJail:
     def list_jails(self):
         jail_list = []
         jails = set()
-        with self.popen(['jls', 'jid', 'name'],
-                        stdin=subprocess.DEVNULL,
-                        stdout=subprocess.PIPE) as popen:
+        with self.popen(
+            ["jls", "jid", "name"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+        ) as popen:
             for line in popen.stdout:
-                jid, name = line.decode().removesuffix('\n').split(' ', 1)
+                jid, name = line.decode().removesuffix("\n").split(" ", 1)
                 jail_list.append((jid, name))
                 jails.add(name)
         for jid, name in jail_list:
             if (
-                    not self.args.full and
-                    name.startswith('ioc-') and
-                    name[4:] not in jails
+                not self.args.full
+                and name.startswith("ioc-")
+                and name[4:] not in jails
             ):
                 name = name[4:]
             yield jid, name
@@ -84,7 +94,7 @@ class RunOnJail:
         try:
             return jids[self.args.jail], self.args.jail
         except KeyError:
-            raise FatalError(f"jail {self.args.jail} not found")
+            raise FatalError(f"jail {self.args.jail} not found") from None
 
     def popen(self, args, *poargs, **kwargs):
         argv = self.wrap_argv(args)
@@ -95,9 +105,13 @@ class RunOnJail:
         if self.args.host is None:
             return argv
         else:
-            tty_flag = '-t' if ssh_tty else '-T'
-            return ['ssh', tty_flag, self.args.host,
-                    ' '.join(shlex.quote(arg) for arg in argv)]
+            tty_flag = "-t" if ssh_tty else "-T"
+            return [
+                "ssh",
+                tty_flag,
+                self.args.host,
+                " ".join(shlex.quote(arg) for arg in argv),
+            ]
 
     @property
     def args(self):
@@ -109,46 +123,86 @@ class RunOnJail:
     def argparser(self):
         if self.__argparser is None:
             parser = argparse.ArgumentParser()
-            parser.add_argument('--host', '-H', metavar='<HOST>',
-                                help="""jail host; passed to OpenSSH ssh(1) so
-                                        ssh_config(5) aliases also work""")
+            parser.add_argument(
+                "--host",
+                "-H",
+                metavar="<HOST>",
+                help="""jail host; passed to OpenSSH ssh(1) so
+                                        ssh_config(5) aliases also work""",
+            )
             user = parser.add_mutually_exclusive_group()
-            user.add_argument('--user', '-u', metavar='<USER>',
-                              help="""username (in jail) or uid to run as""")
+            user.add_argument(
+                "--user",
+                "-u",
+                metavar="<USER>",
+                help="""username (in jail) or uid to run as""",
+            )
             tty = parser.add_mutually_exclusive_group()
-            tty.add_argument('--tty', '-t',
-                             action='store_const', dest='tty', const=True,
-                             help="""allocate TTY when running remotely""")
-            tty.add_argument('--no-tty', '-T',
-                             action='store_const', dest='tty', const=False,
-                             help="""do not allocate TTY when running
-                                     remotely""")
-            parser.add_argument('--full', '-f', action='store_const',
-                                dest='full', const=True,
-                                help="""show/use full jail names:
-                                        disable "ioc-" stripping""")
-            parser.add_argument('--short', '-s', action='store_const',
-                                dest='full', const=False,
-                                help="""show/use short jail names: if a jail
+            tty.add_argument(
+                "--tty",
+                "-t",
+                action="store_const",
+                dest="tty",
+                const=True,
+                help="""allocate TTY when running remotely""",
+            )
+            tty.add_argument(
+                "--no-tty",
+                "-T",
+                action="store_const",
+                dest="tty",
+                const=False,
+                help="""do not allocate TTY when running
+                                     remotely""",
+            )
+            parser.add_argument(
+                "--full",
+                "-f",
+                action="store_const",
+                dest="full",
+                const=True,
+                help="""show/use full jail names:
+                                        disable "ioc-" stripping""",
+            )
+            parser.add_argument(
+                "--short",
+                "-s",
+                action="store_const",
+                dest="full",
+                const=False,
+                help="""show/use short jail names: if a jail
                                         name starts with an "ioc-" prefix and
                                         there is no other jail with the
                                         corresponding name without the prefix,
-                                        strip the prefix""")
-            parser.add_argument('--debug', action='store_true',
-                                help="""enable debug logging""")
-            parser.add_argument('--bash-complete', nargs=3,
-                                metavar=('<COMMAND>', '<WORD>', '<PWORD>'),
-                                help="""bash completion helper""")
-            parser.add_argument('jail', metavar='<JAIL>', nargs='?',
-                                help="""the jail name or ID; if not found
+                                        strip the prefix""",
+            )
+            parser.add_argument(
+                "--debug", action="store_true", help="""enable debug logging"""
+            )
+            parser.add_argument(
+                "--bash-complete",
+                nargs=3,
+                metavar=("<COMMAND>", "<WORD>", "<PWORD>"),
+                help="""bash completion helper""",
+            )
+            parser.add_argument(
+                "jail",
+                metavar="<JAIL>",
+                nargs="?",
+                help="""the jail name or ID; if not found
                                         as-is a name prefixed with "ioc-" is
-                                        tried for iocage compatibility""")
-            parser.add_argument('command', metavar='<ARG>', nargs='*',
-                                help="""command and its arguments to run in
+                                        tried for iocage compatibility""",
+            )
+            parser.add_argument(
+                "command",
+                metavar="<ARG>",
+                nargs="*",
+                help="""command and its arguments to run in
                                         the jail; if not specified, login -f
                                         <USER> is assumed, to get a login
-                                        shell""")
-            parser.set_defaults(user='root')
+                                        shell""",
+            )
+            parser.set_defaults(user="root")
             self.__argparser = parser
         return self.__argparser
 
@@ -157,13 +211,17 @@ class RunOnJail:
             try:
                 return os.environ[name]
             except KeyError:
-                raise FatalError(f"Bash completion variable {name} not found")
+                raise FatalError(
+                    f"Bash completion variable {name} not found"
+                ) from None
 
-        comp_line = get_env('COMP_LINE')
-        comp_point = int(get_env('COMP_POINT'))
-        comp_key = get_env('COMP_KEY')
-        comp_typ = get_env('COMP_TYPE')
-        command, word, prev_word = self.args.bash_complete
+        # Not used yet, but calling get_env() validates that bash really
+        # invoked us: it raises FatalError if the variable is missing.
+        _comp_line = get_env("COMP_LINE")
+        _comp_point = int(get_env("COMP_POINT"))
+        _comp_key = get_env("COMP_KEY")
+        _comp_typ = get_env("COMP_TYPE")
+        _command, word, _prev_word = self.args.bash_complete
 
         names = {name for jid, name in self.list_jails()}
         for name in names:

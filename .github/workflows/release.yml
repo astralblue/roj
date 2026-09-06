@@ -1,0 +1,115 @@
+name: release
+
+# bump-my-version creates the vX.Y.Z tag locally; pushing it is the single
+# release gesture.  Nothing here runs until a tag is pushed.
+#
+# The pattern is deliberately numeric rather than "v*", which would also fire
+# on tags like "verify_something".  GitHub's filter patterns are globs, not
+# regexes: "[0-9]" is a character range and "+" means one or more of the
+# preceding character, so this matches v1.2.3 but not v1.2 or v1.2.3rc1.
+# (The quotes are required -- a flow sequence containing "[" must be quoted.)
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Re-run the full matrix against the exact tagged commit before publishing
+  # anything irrevocable.
+  test:
+    uses: ./.github/workflows/test.yml
+
+  build:
+    name: build distributions
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+
+      - name: Build sdist and wheel
+        run: uv build --no-sources
+
+      # Only a push can be a tag build, and the tags filter above already
+      # constrains its shape -- so this cannot drift from that pattern the
+      # way a second startsWith() check on the ref would.
+      - name: Check that the tag matches the built version
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          built="$(ls dist/*.whl | sed -E 's|.*/roj-([^-]+)-.*|\1|')"
+          if [ "$tag" != "$built" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match built version ${built}"
+            exit 1
+          fi
+          echo "tag ${GITHUB_REF_NAME} matches built version ${built}"
+
+      - name: Check package metadata and README rendering
+        run: uvx twine check --strict dist/*
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    # Gate the publish on a GitHub environment so it can require approval
+    # and be restricted to v* tags.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/roj
+    permissions:
+      # Mandatory for PyPI Trusted Publishing (OIDC).  There is no PyPI
+      # token or password stored anywhere in this repository.
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      # The PyPA reference implementation, preferred over `uv publish`
+      # because it generates PEP 740 attestations under Trusted Publishing.
+      # There is no floating v1 tag -- pypa publishes release/v1 as a
+      # *branch* -- so this is pinned to an exact release.
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@v1.14.2
+
+  github-release:
+    name: create GitHub release
+    needs: publish
+    # As above: a push here is necessarily a tag matching the tags filter.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            dist/*

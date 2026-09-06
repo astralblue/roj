@@ -1,0 +1,41 @@
+name: audit
+
+# Weekly rather than part of the pull-request gate: roj has zero runtime
+# dependencies, so everything in uv.lock is dev tooling that never reaches
+# anyone who installs roj.  A newly published advisory against pytest or
+# ruff is worth knowing about, but not worth reddening an unrelated pull
+# request that changed nothing.
+#
+# Scheduled for the same slot as the Dependabot updates in dependabot.yml,
+# so a finding lands next to the pull request that would bump the offending
+# package.
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: uv audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+
+      # --frozen audits the committed uv.lock exactly as it stands, without
+      # re-resolving: the question this job asks is "has the advisory
+      # database changed under our lockfile", not "is the lockfile current",
+      # which test.yml already checks on every pull request.
+      #
+      # `uv audit` is experimental as of uv 0.12; --preview-features
+      # silences the warning.  If this step starts failing on usage rather
+      # than on findings, the interface has moved.
+      - name: Audit locked dependencies for known vulnerabilities
+        run: uv audit --frozen --preview-features audit-command
