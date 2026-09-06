@@ -2,9 +2,15 @@ name: release
 
 # bump-my-version creates the vX.Y.Z tag locally; pushing it is the single
 # release gesture.  Nothing here runs until a tag is pushed.
+#
+# The pattern is deliberately numeric rather than "v*", which would also fire
+# on tags like "verify_something".  GitHub's filter patterns are globs, not
+# regexes: "[0-9]" is a character range and "+" means one or more of the
+# preceding character, so this matches v1.2.3 but not v1.2 or v1.2.3rc1.
+# (The quotes are required -- a flow sequence containing "[" must be quoted.)
 on:
   push:
-    tags: ["v*"]
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
   workflow_dispatch:
 
 permissions:
@@ -31,8 +37,11 @@ jobs:
       - name: Build sdist and wheel
         run: uv build --no-sources
 
+      # Only a push can be a tag build, and the tags filter above already
+      # constrains its shape -- so this cannot drift from that pattern the
+      # way a second startsWith() check on the ref would.
       - name: Check that the tag matches the built version
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name == 'push'
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME#v}"
@@ -82,7 +91,8 @@ jobs:
   github-release:
     name: create GitHub release
     needs: publish
-    if: startsWith(github.ref, 'refs/tags/v')
+    # As above: a push here is necessarily a tag matching the tags filter.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write

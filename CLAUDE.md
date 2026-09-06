@@ -119,7 +119,17 @@ CI is GitHub Actions on the **`main`** default branch, and the only git remote i
 **`astralblue`** — there is no `origin`. That remote's fetch refspec maps upstream tags into a
 prefixed local namespace (`refs/tags/astralblue/*`), so **never push with `--follow-tags` or
 `--tags`**: push a release tag by name. Releases go to PyPI through Trusted Publishing on a
-pushed `v*` tag — no stored credential.
+pushed release tag — no stored credential. `release.yml` filters on
+`v[0-9]+.[0-9]+.[0-9]+` rather than `v*`, so a tag like `verify-something` cannot trigger a
+release; that filter is the single definition of a release tag, and the workflow's job guards
+key off `github.event_name == 'push'` rather than re-matching the ref, so they cannot drift
+from it.
+
+**The `pypi` environment's tag rule uses a different pattern language** and is restricted to
+`v[0-9]*.[0-9]*.[0-9]*`. Deployment branch/tag rules are matched with Ruby's `File.fnmatch`,
+where `+` is a *literal* character rather than a quantifier — pasting the workflow's
+`v[0-9]+.[0-9]+.[0-9]+` in there matches nothing at all and silently blocks every deployment.
+Verify any change to it with `ruby -e 'p File.fnmatch(<pattern>, "v1.2.3")'` before saving.
 
 The supported-version list is duplicated in **four** places — `requires-python`, the
 `Programming Language :: Python` classifiers, `[tool.ruff] target-version`, and the
