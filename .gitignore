@@ -1,7 +1,10 @@
 # Project-specific rules only.  The marker blocks below are pulled from
-# github/gitignore by `ign` -- do not hand-edit them, and do not duplicate
-# here anything they already cover (build/, dist/, *.egg-info/, __pycache__/,
-# venv/, .venv, .pytest_cache/, .ruff_cache/, .coverage, htmlcov/, ...).
+# github/gitignore by `ign`, which 3-way merges on refresh -- so edits inside
+# a block do survive re-running it.  Keep rules up here anyway when they are
+# ours rather than upstream's, and do not duplicate what the blocks already
+# cover: build/, dist/, *.egg-info/, __pycache__/, venv/, .venv,
+# .pytest_cache/, .ruff_cache/, .coverage, htmlcov/ (Python), .DS_Store
+# (macOS), .idea/workspace.xml and friends (JetBrains).
 
 # uv's multi-environment directory; the Python template covers .venv but not
 # this one.
@@ -13,9 +16,6 @@
 
 # Local, untracked notes for Claude Code.
 CLAUDE.local.md
-
-# macOS
-.DS_Store
 
 # NOTE: uv.lock is deliberately committed -- do not add it here.
 
@@ -337,7 +337,8 @@ __marimo__/
 __MACOSX/
 .AppleDouble
 .LSOverride
-Icon[]
+Icon[
+]
 
 # Resource forks
 ._*
@@ -358,7 +359,8 @@ Icon[]
 .file
 .disk_label*
 lost+found
-.HFS+ Private Directory Data[]
+.HFS+ Private Directory Data[
+]
 
 # Directories potentially created on remote AFP share
 .AppleDB
