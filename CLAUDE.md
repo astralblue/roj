@@ -130,8 +130,14 @@ Because `license = "BSD-2-Clause"` is a PEP 639 expression, a `License :: OSI Ap
 classifier must **not** be added back: `flit_core` errors out when both are present.
 
 Version bumps are driven by `bump-my-version` (`[tool.bumpversion]`); it rewrites
-`__version__` in `roj/__init__.py`, commits, and tags `vX.Y.Z`. **Never edit that string by
-hand** — the packaging metadata reads it via `dynamic = ["version"]`, and the tool's `search`
+`__version__` in `roj/__init__.py`, commits, and tags `vX.Y.Z` — wherever HEAD happens to be.
+**Run it on `main`, after the merge, never inside a topic branch.** A tag made on a branch
+reaches `main` only through the merge commit's *second* parent, so `git log --first-parent
+main` — the release narrative — never shows it. So the sequence is: land the PR with a
+changelog entry but no bump; then on `main`, `git pull && uv run bump-my-version bump <part>`;
+then push the commit, and the tag by name. Branch protection requires status checks but sets
+`enforce_admins: false`, which is deliberately what lets the maintainer push that bump commit
+directly rather than routing it through a second PR. **Never edit that string by hand** — the packaging metadata reads it via `dynamic = ["version"]`, and the tool's `search`
 pattern must keep matching it. It is double-quoted because that is what `ruff format`
 produces; if the quote style ever diverges, the bump silently succeeds while changing nothing.
 
