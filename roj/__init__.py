@@ -57,7 +57,9 @@ class RunOnJail:
                 ]
                 if ssh_tty is None:
                     ssh_tty = True
-            command = self.wrap_argv(command, ssh_tty=ssh_tty)
+            command = self.wrap_argv(
+                command, ssh_tty=ssh_tty, sudo=self.args.sudo
+            )
             self.__logger.debug("running: %r", command)
             os.execvp(command[0], command)
         except FatalError as e:
@@ -101,10 +103,14 @@ class RunOnJail:
         self.__logger.debug("running: %r", argv)
         return subprocess.Popen(argv, *poargs, **kwargs)
 
-    def wrap_argv(self, argv, ssh_tty=False):
+    def wrap_argv(self, argv, ssh_tty=False, sudo=False):
         if self.args.host is None:
-            return argv
+            return self.local_sudo_prefix(sudo) + argv
         else:
+            if sudo is None:
+                argv = ["/bin/sh", "-c", self.remote_sudo_script(argv)]
+            elif sudo:
+                argv = ["sudo"] + argv
             tty_flag = "-t" if ssh_tty else "-T"
             return [
                 "ssh",
@@ -112,6 +118,20 @@ class RunOnJail:
                 self.args.host,
                 " ".join(shlex.quote(arg) for arg in argv),
             ]
+
+    def local_sudo_prefix(self, sudo):
+        if sudo is False or (sudo is None and os.geteuid() == 0):
+            return []
+        return ["sudo"]
+
+    def remote_sudo_script(self, argv):
+        # Runs under /bin/sh on the far side; see CLAUDE.md for why the
+        # decision cannot be made here.  $s is unquoted on purpose, so that
+        # it disappears rather than becoming an empty argument.
+        command = " ".join(shlex.quote(arg) for arg in argv)
+        return (
+            f'case "$(id -u)" in 0) s=;; *) s=sudo;; esac; exec $s {command}'
+        )
 
     @property
     def args(self):
@@ -154,6 +174,23 @@ class RunOnJail:
                 const=False,
                 help="""do not allocate TTY when running
                                      remotely""",
+            )
+            sudo = parser.add_mutually_exclusive_group()
+            sudo.add_argument(
+                "--sudo",
+                "-S",
+                action="store_const",
+                dest="sudo",
+                const=True,
+                help="""run jexec under sudo(8) without
+                                        first checking whether we are root""",
+            )
+            sudo.add_argument(
+                "--no-sudo",
+                action="store_const",
+                dest="sudo",
+                const=False,
+                help="""never run jexec under sudo(8)""",
             )
             parser.add_argument(
                 "--full",

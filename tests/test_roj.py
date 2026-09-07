@@ -5,6 +5,8 @@ so the suite runs on any POSIX CI runner rather than only on a FreeBSD jail
 host.
 """
 
+import os
+import shlex
 import subprocess
 import sys
 
@@ -70,6 +72,24 @@ def test_tty_flags(argv, expected):
 )
 def test_full_flags(argv, expected):
     assert make_roj(argv).args.full is expected
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [
+        ([], None),
+        (["--sudo"], True),
+        (["-S"], True),
+        (["--no-sudo"], False),
+    ],
+)
+def test_sudo_flags(argv, expected):
+    assert make_roj(argv).args.sudo is expected
+
+
+def test_sudo_and_no_sudo_are_mutually_exclusive():
+    with pytest.raises(SystemExit):
+        make_roj(["--sudo", "--no-sudo"])
 
 
 def test_user_defaults_to_root():
@@ -159,6 +179,162 @@ def test_wrap_argv_quotes_arguments_for_the_remote_shell():
     assert wrapped[-1] == "echo 'two words' 'semi;colon'"
 
 
+# --- sudo interposition ----------------------------------------------------
+
+
+def fake_uid(monkeypatch, uid):
+    """Pretend to be *uid*."""
+    monkeypatch.setattr(roj.os, "geteuid", lambda: uid)
+
+
+JEXEC = ["jexec", "-U", "root", "1", "login", "-f", "root"]
+
+
+def test_local_root_is_not_sudod(monkeypatch):
+    fake_uid(monkeypatch, 0)
+    assert make_roj(["alpha"]).wrap_argv(JEXEC, sudo=None) == JEXEC
+
+
+def test_local_non_root_gets_sudo(monkeypatch):
+    fake_uid(monkeypatch, 1000)
+    assert make_roj(["alpha"]).wrap_argv(JEXEC, sudo=None) == ["sudo"] + JEXEC
+
+
+def test_local_sudo_is_forced_even_for_root(monkeypatch):
+    fake_uid(monkeypatch, 0)
+    assert make_roj(["alpha"]).wrap_argv(JEXEC, sudo=True) == ["sudo"] + JEXEC
+
+
+def test_local_no_sudo_wins_over_a_non_root_uid(monkeypatch):
+    fake_uid(monkeypatch, 1000)
+    assert make_roj(["alpha"]).wrap_argv(JEXEC, sudo=False) == JEXEC
+
+
+def test_local_no_sudo_never_consults_the_uid(monkeypatch):
+    calls = []
+    monkeypatch.setattr(roj.os, "geteuid", lambda: calls.append(None) or 1000)
+    assert make_roj(["alpha"]).wrap_argv(JEXEC, sudo=False) == JEXEC
+    assert calls == []
+
+
+def test_remote_auto_defers_the_decision_to_the_far_side():
+    wrapped = make_roj(["-H", "adx", "alpha"]).wrap_argv(
+        JEXEC, ssh_tty=True, sudo=None
+    )
+    assert wrapped[:3] == ["ssh", "-t", "adx"]
+    # Two quoting levels: the login shell unwraps one, /bin/sh the other.
+    assert shlex.split(wrapped[3])[:2] == ["/bin/sh", "-c"]
+    script = shlex.split(wrapped[3])[2]
+    assert 'case "$(id -u)" in' in script
+    assert script.endswith("exec $s jexec -U root 1 login -f root")
+
+
+def test_remote_forced_sudo_needs_no_shell_at_all():
+    # With the uid test gone there is nothing left for /bin/sh to decide.
+    assert make_roj(["-H", "adx", "alpha"]).wrap_argv(JEXEC, sudo=True) == [
+        "ssh",
+        "-T",
+        "adx",
+        "sudo jexec -U root 1 login -f root",
+    ]
+
+
+def test_remote_no_sudo_is_byte_identical_to_the_unwrapped_argv():
+    instance = make_roj(["-H", "adx", "alpha"])
+    assert instance.wrap_argv(JEXEC, ssh_tty=True, sudo=False) == [
+        "ssh",
+        "-t",
+        "adx",
+        "jexec -U root 1 login -f root",
+    ]
+
+
+def test_jls_is_never_sudod(monkeypatch):
+    """`list_jails` parses positionally, so it must stay pty- and sudo-free."""
+    captured = {}
+
+    def fake_popen(argv, *poargs, **kwargs):
+        captured["argv"] = argv
+        return _FakePopen(iter(JLS_LINES))
+
+    fake_uid(monkeypatch, 1000)
+    instance = roj.RunOnJail()
+    instance._RunOnJail__args = instance.argparser.parse_args(
+        ["-H", "adx", "alpha"]
+    )
+    monkeypatch.setattr(roj.subprocess, "Popen", fake_popen)
+    list(instance.list_jails())
+    assert captured["argv"] == ["ssh", "-T", "adx", "jls jid name"]
+
+
+# --- the generated script, run under a real /bin/sh -------------------------
+
+
+def _fake_bin(tmp_path, uid):
+    """A PATH dir with fake `id` and `sudo` that record how they were run."""
+    binary = tmp_path / "bin"
+    binary.mkdir()
+    log = tmp_path / "sudo.log"
+    (binary / "id").write_text(f'#!/bin/sh\nprintf "%s\\n" {uid}\n')
+    # One argument per line, so that quoting mistakes are visible.
+    (binary / "sudo").write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > {log}\n')
+    (binary / "jexec").write_text(f"#!/bin/sh\n: > {log}.jexec\n")
+    for name in ("id", "sudo", "jexec"):
+        (binary / name).chmod(0o755)
+    return binary, log
+
+
+def _run_script(script, binary):
+    env = dict(os.environ, PATH=f"{binary}:{os.environ['PATH']}")
+    return subprocess.run(
+        ["/bin/sh", "-c", script],
+        env=env,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        timeout=60,
+        check=False,
+    )
+
+
+@pytest.mark.parametrize("uid", ["0", "1000"])
+def test_the_generated_script_does_what_it_says(tmp_path, uid):
+    binary, log = _fake_bin(tmp_path, uid)
+    script = make_roj(["-H", "adx", "alpha"]).remote_sudo_script(
+        ["jexec", "-U", "root", "1", "id"]
+    )
+    completed = _run_script(script, binary)
+    assert completed.returncode == 0, completed.stderr.decode()
+    if uid == "0":
+        # root: sudo must not be involved at all, and $s must vanish rather
+        # than become an empty first argument to exec.
+        assert not log.exists()
+        assert (tmp_path / "sudo.log.jexec").exists()
+    else:
+        assert log.read_text().splitlines() == [
+            "jexec",
+            "-U",
+            "root",
+            "1",
+            "id",
+        ]
+
+
+def test_the_generated_script_quotes_arguments(tmp_path):
+    binary, log = _fake_bin(tmp_path, "1000")
+    script = make_roj(["-H", "adx", "alpha"]).remote_sudo_script(
+        ["jexec", "1", "echo", "two words"]
+    )
+    completed = _run_script(script, binary)
+    assert completed.returncode == 0, completed.stderr.decode()
+    # "two words" must arrive as one argument, not two.
+    assert log.read_text().splitlines() == [
+        "jexec",
+        "1",
+        "echo",
+        "two words",
+    ]
+
+
 # --- the tty default depends on whether a command was given ----------------
 
 
@@ -178,13 +354,17 @@ def _exec_argv(monkeypatch, argv):
 
 
 def test_login_shell_gets_a_tty_by_default(monkeypatch):
-    args = _exec_argv(monkeypatch, ["-H", "adx", "alpha"])
+    # --no-sudo keeps the inner command unwrapped, as it was before sudo
+    # support; the wrapped form is covered by the sudo tests above.
+    args = _exec_argv(monkeypatch, ["-H", "adx", "--no-sudo", "alpha"])
     assert args[:3] == ["ssh", "-t", "adx"]
     assert args[3] == "jexec -U root 1 login -f root"
 
 
 def test_explicit_command_gets_no_tty_by_default(monkeypatch):
-    args = _exec_argv(monkeypatch, ["-H", "adx", "alpha", "ps", "axl"])
+    args = _exec_argv(
+        monkeypatch, ["-H", "adx", "--no-sudo", "alpha", "ps", "axl"]
+    )
     assert args[:3] == ["ssh", "-T", "adx"]
     assert args[3] == "jexec -U root 1 ps axl"
 
@@ -200,8 +380,21 @@ def test_tty_overrides_the_command_default(monkeypatch):
 
 
 def test_local_invocation_execs_jexec_directly(monkeypatch):
+    fake_uid(monkeypatch, 0)
     args = _exec_argv(monkeypatch, ["alpha", "ps"])
     assert args == ["jexec", "-U", "root", "1", "ps"]
+
+
+def test_main_sudos_a_local_jexec_when_not_root(monkeypatch):
+    fake_uid(monkeypatch, 1000)
+    args = _exec_argv(monkeypatch, ["alpha", "ps"])
+    assert args == ["sudo", "jexec", "-U", "root", "1", "ps"]
+
+
+def test_main_defers_the_remote_decision_to_the_far_side(monkeypatch):
+    args = _exec_argv(monkeypatch, ["-H", "adx", "alpha", "ps"])
+    assert args[:3] == ["ssh", "-T", "adx"]
+    assert 'case "$(id -u)" in' in args[3]
 
 
 # --- packaging -------------------------------------------------------------
