@@ -8,8 +8,9 @@ repository.
 `roj` ("run on jail") is a small console script that runs a command — a login shell by
 default — inside a FreeBSD jail. It shells out to `jls jid name` to enumerate jails and
 `os.execvp`s `jexec`; with `-H`/`--host` the whole argv is `shlex`-quoted and wrapped in
-`ssh(1)`, so a FreeBSD jail host can be driven from any POSIX client. Everything lives in
-`roj/__init__.py` (~180 lines); `roj/__main__.py` is a 13-line entry point.
+`ssh(1)`, so a FreeBSD jail host can be driven from any POSIX client. `jexec` is run under
+`sudo(8)` when the user it would run as is not root. Everything lives in
+`roj/__init__.py` (~280 lines); `roj/__main__.py` is a 13-line entry point.
 
 ## Commands
 
@@ -49,7 +50,7 @@ dependencies) and a fresh advisory should not redden an unrelated pull request.
 backed by name-mangled `__argparser`/`__args` attributes. Tests prime `args` directly
 (`instance._RunOnJail__args = ...`) to keep the real `sys.argv` out of the suite.
 
-Three behaviors carry more subtlety than they look:
+Four behaviors carry more subtlety than they look:
 
 - **`ioc-` prefix stripping is conditional.** `list_jails` reads the whole listing first,
   then strips an `ioc-` prefix from a name only if no *other* jail already has the bare name.
@@ -60,6 +61,38 @@ Three behaviors carry more subtlety than they look:
   `ssh -t`, an explicit command to `ssh -T`, mirroring `ssh(1)` itself. `--tty`/`--no-tty`
   override. `args.tty` is tri-state — `None` means "not specified", so use `is None`, not
   falsiness.
+- **The sudo decision is made in two different places.** Locally `roj` knows its own uid,
+  so `local_sudo_prefix` decides in Python. Remotely it cannot know who the SSH session
+  lands as, so `remote_sudo_script` emits a `case "$(id -u)" in 0) …` snippet that decides
+  on the far side. `args.sudo` is tri-state like `args.tty` — `None` means "not specified".
+
+  Three details are load-bearing:
+
+  - **The `/bin/sh -c` wrapper is only for the auto case, and it cannot be raw shell in the
+    argv.** `wrap_argv` `shlex.quote`s *every* element before joining, so `case`,
+    `"$(id -u)"` and `;;` would all reach the far side as literals; and `ssh host 'cmd'` runs
+    `cmd` under the remote *login* shell, historically `/bin/csh` on FreeBSD, where
+    `case … esac` is a syntax error. `["/bin/sh", "-c", script]` fixes both: the existing
+    quoting makes `script` a single argument, and the two quoting levels line up exactly with
+    the two shells that unwrap them (login shell, then `/bin/sh`). Inside the script, use
+    **double** quotes, so `shlex.quote`'s single-quoting needs no `'"'"'` escaping, and leave
+    `$s` unquoted so it disappears when empty instead of becoming an empty first argument to
+    `exec`. `--sudo` needs none of this — with no uid test left to run, it is a plain `sudo`
+    prefix on both paths.
+  - **`jls` is never sudo'd.** It does not need privileges, and `list_jails` parses its output
+    positionally, so it must never get a pty either (LF→CRLF would corrupt the parse). Hence
+    `wrap_argv`'s `sudo` parameter defaults to `False`, which leaves `popen` — and therefore
+    `list_jails` — untouched. `--no-sudo` reproduces the 0.3.0 argv byte for byte, including
+    the absence of the `/bin/sh -c` wrapper.
+  - **There is deliberately no terminal detection, and `sudo -n` is never used.** An earlier
+    draft picked `sudo -n` when no tty was around, to avoid hanging on a prompt nobody could
+    answer. That is unnecessary — `sudo` already fails immediately and legibly ("a terminal is
+    required to read the password; either use ssh's -t option or configure an askpass helper")
+    — and actively harmful, because `-n` also refuses to use an askpass helper, which is
+    exactly how a password *can* be supplied without a terminal. Whether sudo may prompt is
+    therefore governed entirely by `-t`/`-T`: `ssh -t` allocates the pty that gives the remote
+    `sudo` something to prompt on.
+
 - **`main()` ends in `os.execvp` and does not return** on the success path. It is testable
   only by stubbing `os.execvp` and asserting the argv it would have exec'd, which is what
   `tests/test_roj.py` does.

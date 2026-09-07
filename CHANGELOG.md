@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `jexec(8)` is now run under `sudo(8)` when the user it would run as is not
+  root, so `roj` no longer requires a root login.  `--sudo`/`-S` forces it,
+  `--no-sudo` disables it, and the default detects: locally from the
+  effective uid, remotely on the far side, since which user an SSH session
+  lands as is not knowable from the client.  `jls(8)` is never run under
+  `sudo`.
+
 ## [0.3.0] — 2026-09-05
 
 ### Added
