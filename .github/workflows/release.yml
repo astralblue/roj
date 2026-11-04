@@ -86,7 +86,7 @@ jobs:
       # There is no floating v1 tag -- pypa publishes release/v1 as a
       # *branch* -- so this is pinned to an exact release.
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@v1.14.2
+        uses: pypa/gh-action-pypi-publish@v1.14.3
 
   github-release:
     name: create GitHub release
